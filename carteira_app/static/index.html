@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minha Carteira</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg:#0f0f11;--bg2:#17171a;--bg3:#1e1e22;
+    --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+    --text:#f0f0f0;--muted:#888;
+    --green:#22c98a;--green-bg:rgba(34,201,138,0.1);
+    --red:#f25757;--red-bg:rgba(242,87,87,0.1);
+    --yellow:#f5c842;--blue:#5b9cf6;--blue-bg:rgba(91,156,246,0.1);
+    --accent:#22c98a;--radius:10px;--radius-lg:16px;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+  .layout{display:flex;min-height:100vh;}
+  .sidebar{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);padding:24px 0;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;}
+  .main{margin-left:220px;flex:1;padding:32px;max-width:1200px;}
+  .sidebar-logo{padding:0 20px 28px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+  .sidebar-logo .logo-text{font-size:17px;font-weight:600;letter-spacing:-0.3px;}
+  .sidebar-logo .logo-sub{font-size:11px;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--muted);cursor:pointer;font-size:13.5px;border-left:2px solid transparent;transition:all 0.15s;}
+  .nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03);}
+  .nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(34,201,138,0.05);font-weight:500;}
+  .nav-item svg{width:15px;height:15px;opacity:0.7;}.nav-item.active svg{opacity:1;}
+  .sidebar-bottom{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+  .page{display:none;}.page.active{display:block;}
+  .page-header{margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;}
+  .page-header-left h1{font-size:22px;font-weight:600;letter-spacing:-0.4px;}
+  .page-header-left p{font-size:13px;color:var(--muted);margin-top:4px;}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:28px;}
+  .metric{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px;}
+  .metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;font-family:'DM Mono',monospace;margin-bottom:8px;}
+  .metric-value{font-size:24px;font-weight:600;letter-spacing:-0.5px;line-height:1;}
+  .metric-sub{font-size:12px;margin-top:6px;}
+  .metric-sub.up{color:var(--green);}.metric-sub.down{color:var(--red);}.metric-sub.neutral{color:var(--muted);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;}
+  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+  .card-title{font-size:13px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-family:'DM Mono',monospace;}
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-family:'DM Mono',monospace;padding:0 12px 10px 0;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
+  tbody td{padding:12px 12px 12px 0;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover td{background:rgba(255,255,255,0.02);}
+  .badge{display:inline-flex;align-items:center;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;padding:3px 8px;border-radius:4px;letter-spacing:0.3px;text-transform:uppercase;}
+  .badge-acoes{background:var(--blue-bg);color:var(--blue);}
+  .badge-fiis{background:var(--green-bg);color:var(--green);}
+  .badge-rf{background:rgba(245,200,66,0.12);color:var(--yellow);}
+  .badge-stocks{background:rgba(192,132,252,0.12);color:#c084fc;}
+  .badge-reits{background:rgba(251,146,60,0.12);color:#fb923c;}
+  .val-up{color:var(--green);font-weight:500;}.val-down{color:var(--red);font-weight:500;}
+  .val-mono{font-family:'DM Mono',monospace;font-size:13px;}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:14px;}
+  .form-group label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-family:'DM Mono',monospace;margin-bottom:6px;}
+  .form-group input,.form-group select{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;padding:9px 12px;outline:none;transition:border-color 0.15s;}
+  .form-group input:focus,.form-group select:focus{border-color:var(--accent);}
+  .form-group select option{background:var(--bg3);}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;font-size:13px;font-weight:500;font-family:'DM Sans',sans-serif;border-radius:var(--radius);cursor:pointer;transition:all 0.15s;border:none;}
+  .btn-primary{background:var(--accent);color:#0a1a12;}.btn-primary:hover{background:#1db87a;}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border2);}.btn-ghost:hover{color:var(--text);background:rgba(255,255,255,0.04);}
+  .btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(242,87,87,0.2);font-size:11px;padding:5px 10px;white-space:nowrap;}.btn-danger:hover{border-color:var(--red);}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+  /* BOTÃO ATUALIZAR COTAÇÕES */
+  .btn-sync{background:rgba(91,156,246,0.12);color:var(--blue);border:1px solid rgba(91,156,246,0.25);font-size:12px;padding:7px 14px;}
+  .btn-sync:hover{background:rgba(91,156,246,0.2);}
+  .btn-sync.loading{opacity:0.7;cursor:not-allowed;}
+  .spin{display:inline-block;animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* STATUS COTAÇÃO */
+  .cotacao-status{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+  .cotacao-auto{color:var(--green);font-size:10px;font-family:'DM Mono',monospace;}
+  .cotacao-manual{color:var(--muted);font-size:10px;font-family:'DM Mono',monospace;}
+
+  .prov-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
+  .prov-item:last-child{border-bottom:none;}
+  .prov-ticker{font-weight:600;font-size:13px;}
+  .prov-date{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;}
+  .meta-item{margin-bottom:20px;}
+  .meta-head{display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;}
+  .meta-head span:last-child{font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);}
+  .bar-bg{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:3px;transition:width 0.4s ease;}
+  .calc-result{margin-top:14px;padding:14px 16px;background:var(--bg3);border-radius:var(--radius);border-left:3px solid var(--accent);font-size:13px;line-height:1.6;display:none;}
+  .calc-result.show{display:block;}
+  .empty{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
+  .empty-icon{font-size:32px;margin-bottom:8px;opacity:0.4;}
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:12px 18px;font-size:13px;z-index:999;transform:translateY(80px);opacity:0;transition:all 0.25s;pointer-events:none;border-left:3px solid var(--accent);}
+  .toast.show{transform:translateY(0);opacity:1;}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+  .legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+  ::-webkit-scrollbar{width:4px;height:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+  @media(max-width:900px){.sidebar{width:60px;}.sidebar-logo,.nav-item span,.sidebar-bottom{display:none;}.main{margin-left:60px;padding:20px;}.grid2{grid-template-columns:1fr;}.metrics{grid-template-columns:1fr 1fr;}}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:none;align-items:center;justify-content:center;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:24px;width:100%;max-width:480px;margin:16px;}
+  .modal-title{font-size:16px;font-weight:600;margin-bottom:20px;}
+  .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-text">💹 Carteira</div>
+      <div class="logo-sub">gestão financeira</div>
+    </div>
+    <nav>
+      <div class="nav-item active" onclick="goTo('resumo',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Resumo</span></div>
+      <div class="nav-item" onclick="goTo('carteira',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><span>Carteira</span></div>
+      <div class="nav-item" onclick="goTo('proventos',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Proventos</span></div>
+      <div class="nav-item" onclick="goTo('planejamento',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Planejamento</span></div>
+      <div class="nav-item" onclick="goTo('lancamentos',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg><span>Lançamentos</span></div>
+    </nav>
+    <div class="sidebar-bottom">v2.1 · yfinance</div>
+  </aside>
+
+  <main class="main">
+
+    <!-- RESUMO -->
+    <div class="page active" id="page-resumo">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Resumo</h1><p>Visão geral da sua carteira</p></div>
+        <button class="btn btn-sync" id="btn-sync" onclick="atualizarCotacoes()">
+          <span id="sync-icon">⟳</span> Atualizar cotações
+        </button>
+      </div>
+      <div class="metrics" id="metrics-resumo"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-header"><span class="card-title">Distribuição</span></div><div style="position:relative;height:200px;"><canvas id="chart-pie" role="img" aria-label="Distribuição da carteira"></canvas></div><div class="legend" id="legend-pie"></div></div>
+        <div class="card"><div class="card-header"><span class="card-title">Evolução (6 meses)</span></div><div style="position:relative;height:200px;"><canvas id="chart-evolucao" role="img" aria-label="Evolução do patrimônio"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-header"><span class="card-title">Seus ativos</span></div><div class="table-wrap"><table id="table-resumo"><thead><tr><th>Ativo</th><th>Tipo</th><th>Preço atual</th><th>Total</th><th>Variação</th><th>Atualizado em</th></tr></thead><tbody></tbody></table></div></div>
+    </div>
+
+    <!-- CARTEIRA -->
+    <div class="page" id="page-carteira">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Carteira</h1><p>Todos os seus ativos em detalhe</p></div>
+        <button class="btn btn-sync" onclick="atualizarCotacoes()">⟳ Atualizar cotações</button>
+      </div>
+      <div class="metrics" id="metrics-carteira"></div>
+      <div class="card"><div class="card-header"><span class="card-title">Posições</span></div>
+        <div class="table-wrap"><table id="table-carteira">
+          <thead><tr><th>Ativo</th><th>Tipo</th><th>Qtd</th><th>P. Médio</th><th>P. Atual</th><th>Total</th><th>Ganho</th><th>Var%</th><th>DY%</th><th>Cotação</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- PROVENTOS -->
+    <div class="page" id="page-proventos">
+      <div class="page-header"><div class="page-header-left"><h1>Proventos</h1><p>Dividendos e rendimentos recebidos</p></div></div>
+      <div class="metrics" id="metrics-proventos"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-header"><span class="card-title">Por mês</span></div><div style="position:relative;height:220px;"><canvas id="chart-proventos" role="img" aria-label="Proventos mensais"></canvas></div></div>
+        <div class="card"><div class="card-header"><span class="card-title">Histórico</span></div><div id="lista-proventos"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Registrar provento</span></div>
+        <div class="form-grid">
+          <div class="form-group"><label>Ativo</label><input id="p-ativo" placeholder="ex: MXRF11"></div>
+          <div class="form-group"><label>Valor (R$)</label><input id="p-valor" type="number" step="0.01"></div>
+          <div class="form-group"><label>Data</label><input id="p-data" type="date"></div>
+          <div class="form-group"><label>Tipo</label><select id="p-tipo"><option>Dividendo</option><option>JCP</option><option>Rendimento FII</option><option>Cupom Renda Fixa</option></select></div>
+        </div>
+        <button class="btn btn-primary" onclick="addProvento()">Registrar</button>
+      </div>
+    </div>
+
+    <!-- PLANEJAMENTO -->
+    <div class="page" id="page-planejamento">
+      <div class="page-header"><div class="page-header-left"><h1>Planejamento</h1><p>Metas e projeções</p></div></div>
+      <div class="metrics" id="metrics-plan"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-header"><span class="card-title">Alocação atual vs meta</span></div><div id="metas-alocacao"></div></div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Calculadora de meta</span></div>
+          <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+            <div class="form-group"><label>Meta (R$)</label><input id="m-meta" type="number" placeholder="200000"></div>
+            <div class="form-group"><label>Aporte mensal (R$)</label><input id="m-aporte" type="number" placeholder="1500"></div>
+            <div class="form-group"><label>Rentab. anual (%)</label><input id="m-rent" type="number" value="12"></div>
+          </div>
+          <button class="btn btn-primary" onclick="calcMeta()">Calcular</button>
+          <div class="calc-result" id="result-meta"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LANÇAMENTOS -->
+    <div class="page" id="page-lancamentos">
+      <div class="page-header"><div class="page-header-left"><h1>Lançamentos</h1><p>Adicione e gerencie seus ativos</p></div></div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><span class="card-title">Novo ativo</span></div>
+        <div class="form-grid">
+          <div class="form-group"><label>Ticker / Nome</label><input id="f-ticker" placeholder="ex: PETR4"></div>
+          <div class="form-group"><label>Tipo</label><select id="f-tipo"><option value="Ações">Ações</option><option value="FIIs">FIIs</option><option value="Stocks">Stocks</option><option value="REITs">REITs</option><option value="Renda Fixa">Renda Fixa</option></select></div>
+          <div class="form-group"><label>Quantidade</label><input id="f-qtd" type="number"></div>
+          <div class="form-group"><label>Preço médio (R$)</label><input id="f-medio" type="number" step="0.01"></div>
+          <div class="form-group"><label>Preço atual (R$) <span style="color:var(--green);font-size:10px">auto se Ação/FII</span></label><input id="f-atual" type="number" step="0.01" placeholder="deixe em branco para auto"></div>
+          <div class="form-group"><label>Dividend Yield (%)</label><input id="f-dy" type="number" step="0.1"></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-add" onclick="addAtivo()">+ Adicionar ativo</button>
+          <button class="btn btn-ghost" onclick="exportarDados()">↓ Backup JSON</button>
+          <label class="btn btn-ghost" style="cursor:pointer;">↑ Restaurar JSON<input type="file" id="import-file" accept=".json" style="display:none" onchange="importarDados(this)"></label>
+        </div>
+      </div>
+      <div class="card"><div class="card-header"><span class="card-title">Ativos cadastrados</span></div>
+        <div class="table-wrap"><table id="table-lanc">
+          <thead><tr><th>Ativo</th><th>Tipo</th><th>Qtd</th><th>P. Médio</th><th>P. Atual</th><th>DY%</th><th>Total</th><th>Cotação</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- MODAL EDIÇÃO PROVENTOS -->
+<div class="modal-overlay" id="modal-prov-overlay" onclick="fecharModalProv(event)">
+  <div class="modal">
+    <div class="modal-title">Editar provento</div>
+    <input type="hidden" id="edit-prov-id">
+    <div class="form-grid">
+      <div class="form-group"><label>Ativo</label><input id="edit-prov-ativo" disabled style="opacity:0.5"></div>
+      <div class="form-group"><label>Valor (R$)</label><input id="edit-prov-valor" type="number" step="0.01"></div>
+      <div class="form-group"><label>Data</label><input id="edit-prov-data" type="date"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="edit-prov-tipo">
+          <option>Dividendo</option>
+          <option>JCP</option>
+          <option>Rendimento FII</option>
+          <option>Cupom Renda Fixa</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-prov-overlay').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEdicaoProv()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDIÇÃO -->
+<div class="modal-overlay" id="modal-overlay" onclick="fecharModal(event)">
+  <div class="modal">
+    <div class="modal-title">Editar ativo</div>
+    <input type="hidden" id="edit-id">
+    <div class="form-grid">
+      <div class="form-group"><label>Ticker</label><input id="edit-ticker" disabled style="opacity:0.5"></div>
+      <div class="form-group"><label>Tipo</label><select id="edit-tipo"><option value="Ações">Ações</option><option value="FIIs">FIIs</option><option value="Stocks">Stocks</option><option value="REITs">REITs</option><option value="Renda Fixa">Renda Fixa</option></select></div>
+      <div class="form-group"><label>Quantidade</label><input id="edit-qtd" type="number" step="any"></div>
+      <div class="form-group"><label>Preço médio (R$)</label><input id="edit-medio" type="number" step="0.01"></div>
+      <div class="form-group"><label>Preço atual (R$)</label><input id="edit-atual" type="number" step="0.01"></div>
+      <div class="form-group"><label>Dividend Yield (%)</label><input id="edit-dy" type="number" step="0.1"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEdicao()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── API ──────────────────────────────────────────────────────────────────────
+const api = {
+  get:    url => fetch(url).then(r => r.json()),
+  post:   (url,d) => fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>r.json()),
+  put:    (url,d) => fetch(url,{method:'PUT', headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>r.json()),
+  delete: url => fetch(url,{method:'DELETE'}).then(r=>r.json()),
+};
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let ativos = [], proventos = [];
+
+async function loadAll() {
+  [ativos, proventos] = await Promise.all([api.get('/api/ativos'), api.get('/api/proventos')]);
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+const R  = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const P  = v => (v>=0?'+':'')+Number(v).toFixed(2)+'%';
+const BC = t => ({'Ações':'badge-acoes','FIIs':'badge-fiis','Stocks':'badge-stocks','REITs':'badge-reits','Renda Fixa':'badge-rf'}[t]||'badge-acoes');
+const patrimonio = () => ativos.reduce((s,a)=>s+a.qtd*a.atual,0);
+const investido  = () => ativos.reduce((s,a)=>s+a.qtd*a.medio,0);
+const ganho      = () => patrimonio()-investido();
+const totalProv  = () => proventos.reduce((s,p)=>s+p.valor,0);
+const porTipo    = () => ativos.reduce((t,a)=>{t[a.tipo]=(t[a.tipo]||0)+a.qtd*a.atual;return t;},{});
+
+function renderMetrics(id,cards) {
+  document.getElementById(id).innerHTML = cards.map(c=>
+    `<div class="metric"><div class="metric-label">${c.label}</div><div class="metric-value">${c.value}</div>${c.sub?`<div class="metric-sub ${c.cls||'neutral'}">${c.sub}</div>`:''}</div>`
+  ).join('');
+}
+function toast(msg) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+// ─── ATUALIZAR COTAÇÕES ───────────────────────────────────────────────────────
+async function atualizarCotacoes() {
+  const btn = document.getElementById('btn-sync');
+  const icon = document.getElementById('sync-icon');
+  if (btn) { btn.disabled=true; }
+  if (icon) { icon.className='spin'; icon.textContent='⟳'; }
+  toast('🔄 Buscando cotações...');
+  try {
+    ativos = await api.post('/api/atualizar-cotacoes', {});
+    renderAll();
+    toast('✓ Cotações atualizadas!');
+  } catch(e) {
+    toast('⚠ Erro ao atualizar cotações.');
+  }
+  if (btn) { btn.disabled=false; }
+  if (icon) { icon.className=''; icon.textContent='⟳'; }
+}
+
+// ─── CHARTS ───────────────────────────────────────────────────────────────────
+let pieChart, evolChart, provChart;
+const COLORS={'Ações':'#5b9cf6','FIIs':'#22c98a','Stocks':'#c084fc','REITs':'#fb923c','Renda Fixa':'#f5c842'};
+
+function buildPie() {
+  const tipos=porTipo(), labels=Object.keys(tipos), values=Object.values(tipos);
+  const total=values.reduce((a,b)=>a+b,0), bgs=labels.map(l=>COLORS[l]||'#888');
+  if(pieChart) pieChart.destroy();
+  pieChart=new Chart(document.getElementById('chart-pie'),{type:'doughnut',data:{labels,datasets:[{data:values,backgroundColor:bgs,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false}}}});
+  document.getElementById('legend-pie').innerHTML=labels.map((l,i)=>`<div class="legend-item"><span class="legend-dot" style="background:${bgs[i]}"></span>${l} ${(values[i]/total*100).toFixed(1)}%</div>`).join('');
+}
+
+function buildEvol() {
+  const pt=patrimonio(), meses=['Out/24','Nov/24','Dez/24','Jan/25','Fev/25','Mar/25'];
+  const base=pt*0.68, data=meses.map((_,i)=>Math.round(base+(pt-base)*(i/(meses.length-1))));
+  if(evolChart) evolChart.destroy();
+  evolChart=new Chart(document.getElementById('chart-evolucao'),{type:'line',data:{labels:meses,datasets:[{data,borderColor:'#22c98a',backgroundColor:'rgba(34,201,138,0.08)',borderWidth:2,fill:true,tension:0.4,pointBackgroundColor:'#22c98a',pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#666',callback:v=>'R$'+(v/1000).toFixed(0)+'k'}},x:{grid:{display:false},ticks:{color:'#666',font:{size:11}}}}}});
+}
+
+function buildProvChart() {
+  const months={};
+  proventos.forEach(p=>{const m=p.data.slice(0,7);months[m]=(months[m]||0)+p.valor;});
+  const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
+  const labels=sorted.map(([m])=>{const [y,mo]=m.split('-');return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+mo]+'/'+y.slice(2);});
+  const values=sorted.map(([,v])=>v);
+  if(provChart) provChart.destroy();
+  provChart=new Chart(document.getElementById('chart-proventos'),{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:'rgba(34,201,138,0.5)',borderColor:'#22c98a',borderWidth:1,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#666',callback:v=>'R$'+v}},x:{grid:{display:false},ticks:{color:'#666',font:{size:11}}}}}});
+}
+
+// ─── RENDERS ──────────────────────────────────────────────────────────────────
+function cotacaoTag(a) {
+  if (a.tipo === 'Renda Fixa') return '<span class="cotacao-manual">manual</span>';
+  return a.ultima_atualizacao
+    ? `<span class="cotacao-auto">● auto</span>`
+    : '<span class="cotacao-manual">pendente</span>';
+}
+
+function renderResumo() {
+  const pt=patrimonio(),inv=investido(),g=ganho(),pct=inv?g/inv*100:0;
+  renderMetrics('metrics-resumo',[
+    {label:'Patrimônio total',value:R(pt)},
+    {label:'Valor investido',value:R(inv)},
+    {label:'Ganho de capital',value:R(g),cls:g>=0?'up':'down',sub:P(pct)+' de rentabilidade'},
+    {label:'Proventos recebidos',value:R(totalProv()),cls:'up'},
+  ]);
+  buildPie(); buildEvol();
+  const tbody=document.querySelector('#table-resumo tbody');
+  if(!ativos.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="empty-icon">📂</div>Nenhum ativo. Vá em Lançamentos para adicionar.</div></td></tr>';return;}
+  tbody.innerHTML=ativos.map(a=>{
+    const v=(a.atual-a.medio)/a.medio*100;
+    return `<tr><td><strong>${a.ticker}</strong></td><td><span class="badge ${BC(a.tipo)}">${a.tipo}</span></td><td class="val-mono">${R(a.atual)}</td><td class="val-mono">${R(a.qtd*a.atual)}</td><td class="${v>=0?'val-up':'val-down'} val-mono">${P(v)}</td><td>${a.ultima_atualizacao?`<span class="cotacao-status">${a.ultima_atualizacao}</span>`:cotacaoTag(a)}</td></tr>`;
+  }).join('');
+}
+
+function renderCarteira() {
+  const tipos=porTipo(),pt=patrimonio();
+  const tiposAtivos = ['Ações','FIIs','Stocks','REITs','Renda Fixa'].filter(t => tipos[t]);
+  const metricCards = tiposAtivos.map(t => ({label:t, value:R(tipos[t]||0), sub:pt?((tipos[t]||0)/pt*100).toFixed(1)+'% da carteira':''}));
+  metricCards.push({label:'Ativos', value:ativos.length});
+  renderMetrics('metrics-carteira', metricCards);
+  const tbody=document.querySelector('#table-carteira tbody');
+  if(!ativos.length){tbody.innerHTML='<tr><td colspan="11"><div class="empty"><div class="empty-icon">📂</div>Nenhum ativo cadastrado.</div></td></tr>';return;}
+  tbody.innerHTML=ativos.map(a=>{
+    const g=(a.atual-a.medio)*a.qtd,v=(a.atual-a.medio)/a.medio*100;
+    return `<tr><td><strong>${a.ticker}</strong></td><td><span class="badge ${BC(a.tipo)}">${a.tipo}</span></td><td class="val-mono">${a.qtd}</td><td class="val-mono">${R(a.medio)}</td><td class="val-mono">${R(a.atual)}</td><td class="val-mono">${R(a.qtd*a.atual)}</td><td class="${g>=0?'val-up':'val-down'} val-mono">${R(g)}</td><td class="${v>=0?'val-up':'val-down'} val-mono">${P(v)}</td><td class="val-mono">${a.dy}%</td><td>${cotacaoTag(a)}</td><td><button class="btn btn-danger" onclick="removeAtivo(${a.id})">remover</button></td></tr>`;
+  }).join('');
+}
+
+function renderProventos() {
+  const total=totalProv(),inv=investido(),meses=new Set(proventos.map(p=>p.data.slice(0,7))).size||1;
+  renderMetrics('metrics-proventos',[
+    {label:'Total recebido',value:R(total)},
+    {label:'Média mensal',value:R(total/meses)},
+    {label:'Yield on cost',value:P(inv?total/inv*100:0),cls:'up',sub:'sobre capital investido'},
+  ]);
+  buildProvChart();
+  const lista=document.getElementById('lista-proventos');
+  if(!proventos.length){lista.innerHTML='<div class="empty"><div class="empty-icon">💰</div>Nenhum provento registrado.</div>';return;}
+  lista.innerHTML=proventos.slice(0,8).map(p=>`<div class="prov-item"><div><div class="prov-ticker">${p.ativo} <span style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;">${p.tipo}</span></div><div class="prov-date">${p.data}</div></div><div class="val-up val-mono">${R(p.valor)}</div></div>`).join('');
+}
+
+function renderPlanejamento() {
+  const pt=patrimonio(),inv=investido(),g=ganho();
+  renderMetrics('metrics-plan',[
+    {label:'Patrimônio atual',value:R(pt)},
+    {label:'Meta R$200k',value:(pt/200000*100).toFixed(1)+'%',cls:'up',sub:'faltam '+R(Math.max(0,200000-pt))},
+    {label:'Rentabilidade total',value:P(inv?g/inv*100:0),cls:g>=0?'up':'down'},
+  ]);
+  const tipos=porTipo(),total=patrimonio();
+  const metas={'Ações':30,'FIIs':25,'Stocks':20,'REITs':10,'Renda Fixa':15};
+  const barColors={'Ações':'#5b9cf6','FIIs':'#22c98a','Stocks':'#c084fc','REITs':'#fb923c','Renda Fixa':'#f5c842'};
+  document.getElementById('metas-alocacao').innerHTML=Object.entries(metas).map(([tipo,metaPct])=>{
+    const atual=total?((tipos[tipo]||0)/total*100):0;
+    return `<div class="meta-item"><div class="meta-head"><span>${tipo}</span><span>${atual.toFixed(1)}% atual · meta ${metaPct}%</span></div><div class="bar-bg"><div class="bar-fill" style="width:${Math.min(atual/metaPct*100,100).toFixed(1)}%;background:${barColors[tipo]}"></div></div></div>`;
+  }).join('');
+}
+
+function renderLancamentos() {
+  const tbody=document.querySelector('#table-lanc tbody');
+  if(!ativos.length){tbody.innerHTML='<tr><td colspan="9"><div class="empty"><div class="empty-icon">📂</div>Nenhum ativo ainda.</div></td></tr>';return;}
+  tbody.innerHTML=ativos.map(a=>{
+    const v=(a.atual-a.medio)/a.medio*100;
+    return `<tr><td><strong>${a.ticker}</strong></td><td><span class="badge ${BC(a.tipo)}">${a.tipo}</span></td><td class="val-mono">${a.qtd}</td><td class="val-mono">${R(a.medio)}</td><td class="val-mono">${R(a.atual)}</td><td class="val-mono">${a.dy}%</td><td class="val-mono">${R(a.qtd*a.atual)}</td><td>${cotacaoTag(a)}</td><td><div style="display:flex;gap:6px;align-items:center;"><button class="btn-edit" onclick="abrirModal(${a.id})">✏ editar</button><button class="btn btn-danger" onclick="removeAtivo(${a.id})">✕</button></div></td></tr>`;
+  }).join('');
+}
+
+// ─── ACTIONS ──────────────────────────────────────────────────────────────────
+async function addAtivo() {
+  const ticker=document.getElementById('f-ticker').value.trim();
+  const tipo=document.getElementById('f-tipo').value;
+  const qtd=parseFloat(document.getElementById('f-qtd').value);
+  const medio=parseFloat(document.getElementById('f-medio').value);
+  const atualInput=parseFloat(document.getElementById('f-atual').value);
+  const dy=parseFloat(document.getElementById('f-dy').value)||0;
+  if(!ticker||!qtd||!medio) return toast('⚠ Preencha pelo menos ticker, quantidade e preço médio.');
+
+  const btn=document.getElementById('btn-add');
+  btn.disabled=true; btn.textContent='Buscando cotação...';
+
+  const novo = await api.post('/api/ativos',{
+    ticker, tipo, qtd, medio,
+    atual: atualInput||0,  // server vai sobrescrever com yfinance se for ação/FII
+    dy
+  });
+  ativos.push(novo);
+  ['f-ticker','f-qtd','f-medio','f-atual','f-dy'].forEach(id=>document.getElementById(id).value='');
+  btn.disabled=false; btn.textContent='+ Adicionar ativo';
+  renderLancamentos();
+  const msg = novo.ultima_atualizacao ? `✓ ${novo.ticker} adicionado! Cotação: ${R(novo.atual)}` : `✓ ${novo.ticker} adicionado!`;
+  toast(msg);
+}
+
+async function removeAtivo(id) {
+  const a=ativos.find(x=>x.id===id);
+  if(!confirm('Remover '+a.ticker+'?')) return;
+  await api.delete('/api/ativos/'+id);
+  ativos=ativos.filter(x=>x.id!==id);
+  renderLancamentos(); renderCarteira(); renderResumo();
+  toast('Ativo removido.');
+}
+
+async function addProvento() {
+  const ativo=document.getElementById('p-ativo').value.trim();
+  const valor=parseFloat(document.getElementById('p-valor').value);
+  const data=document.getElementById('p-data').value;
+  const tipo=document.getElementById('p-tipo').value;
+  if(!ativo||!valor||!data) return toast('⚠ Preencha todos os campos.');
+  const novo=await api.post('/api/proventos',{ativo,valor,data,tipo});
+  proventos.unshift(novo);
+  ['p-ativo','p-valor'].forEach(id=>document.getElementById(id).value='');
+  renderProventos();
+  toast('✓ Provento registrado!');
+}
+
+function calcMeta() {
+  const meta=parseFloat(document.getElementById('m-meta').value);
+  const aporte=parseFloat(document.getElementById('m-aporte').value);
+  const rent=parseFloat(document.getElementById('m-rent').value)/100/12;
+  const atual=patrimonio();
+  const el=document.getElementById('result-meta');
+  if(!meta||!aporte) return;
+  if(atual>=meta){el.innerHTML='🎉 Você já atingiu sua meta!';el.classList.add('show');return;}
+  let saldo=atual,meses=0;
+  while(saldo<meta&&meses<1200){saldo=saldo*(1+rent)+aporte;meses++;}
+  const anos=Math.floor(meses/12),mesR=meses%12;
+  el.innerHTML=`Faltam <strong>${R(meta-atual)}</strong>.<br>Com aportes de <strong>${R(aporte)}/mês</strong> e <strong>${document.getElementById('m-rent').value}% a.a.</strong>, você chega em:<br><br><strong style="font-size:18px;color:var(--accent)">${anos} ano(s) e ${mesR} mês(es)</strong>`;
+  el.classList.add('show');
+}
+
+async function exportarDados() {
+  const dados=await api.get('/api/backup');
+  const blob=new Blob([JSON.stringify(dados,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='carteira_backup_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  toast('✓ Backup exportado!');
+}
+
+async function importarDados(input) {
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      const dados=JSON.parse(e.target.result);
+      await api.post('/api/restaurar',dados);
+      await loadAll(); renderAll();
+      toast('✓ Dados restaurados!');
+    }catch{toast('⚠ Arquivo inválido.');}
+  };
+  reader.readAsText(file);
+}
+
+async function removeProvento(id) {
+  if (!confirm('Remover este provento?')) return;
+  await api.delete('/api/proventos/'+id);
+  proventos = proventos.filter(x=>x.id!==id);
+  renderProventos();
+  toast('Provento removido.');
+}
+function abrirModalProv(id) {
+  const p = proventos.find(x=>x.id===id);
+  document.getElementById('edit-prov-id').value    = p.id;
+  document.getElementById('edit-prov-ativo').value = p.ativo;
+  document.getElementById('edit-prov-valor').value = p.valor;
+  document.getElementById('edit-prov-data').value  = p.data;
+  document.getElementById('edit-prov-tipo').value  = p.tipo;
+  document.getElementById('modal-prov-overlay').classList.add('open');
+}
+function fecharModalProv(e) {
+  if (e.target === document.getElementById('modal-prov-overlay'))
+    document.getElementById('modal-prov-overlay').classList.remove('open');
+}
+async function salvarEdicaoProv() {
+  const id    = parseInt(document.getElementById('edit-prov-id').value);
+  const valor = parseFloat(document.getElementById('edit-prov-valor').value);
+  const data  = document.getElementById('edit-prov-data').value;
+  const tipo  = document.getElementById('edit-prov-tipo').value;
+  const ativo = document.getElementById('edit-prov-ativo').value;
+  if (!valor||!data) return toast('⚠ Preencha todos os campos.');
+  const atualizado = await api.put('/api/proventos/'+id, {ativo, valor, data, tipo});
+  const idx = proventos.findIndex(x=>x.id===id);
+  proventos[idx] = atualizado;
+  document.getElementById('modal-prov-overlay').classList.remove('open');
+  renderProventos();
+  toast('✓ Provento atualizado!');
+}
+function abrirModal(id) {
+  const a = ativos.find(x=>x.id===id);
+  document.getElementById('edit-id').value    = a.id;
+  document.getElementById('edit-ticker').value = a.ticker;
+  document.getElementById('edit-tipo').value   = a.tipo;
+  document.getElementById('edit-qtd').value    = a.qtd;
+  document.getElementById('edit-medio').value  = a.medio;
+  document.getElementById('edit-atual').value  = a.atual;
+  document.getElementById('edit-dy').value     = a.dy;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function fecharModal(e) {
+  if (e.target === document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+async function salvarEdicao() {
+  const id    = parseInt(document.getElementById('edit-id').value);
+  const tipo  = document.getElementById('edit-tipo').value;
+  const qtd   = parseFloat(document.getElementById('edit-qtd').value);
+  const medio = parseFloat(document.getElementById('edit-medio').value);
+  const atual = parseFloat(document.getElementById('edit-atual').value);
+  const dy    = parseFloat(document.getElementById('edit-dy').value)||0;
+  const ticker = document.getElementById('edit-ticker').value;
+  if (!qtd||!medio||!atual) return toast('⚠ Preencha todos os campos.');
+  const atualizado = await api.put('/api/ativos/'+id, {ticker, tipo, qtd, medio, atual, dy});
+  const idx = ativos.findIndex(x=>x.id===id);
+  ativos[idx] = atualizado;
+  document.getElementById('modal-overlay').classList.remove('open');
+  renderAll();
+  toast('✓ Ativo atualizado!');
+}
+function renderAll(){renderResumo();renderCarteira();renderProventos();renderPlanejamento();renderLancamentos();}
+
+// ─── NAVIGATION ───────────────────────────────────────────────────────────────
+const renders={resumo:renderResumo,carteira:renderCarteira,proventos:renderProventos,planejamento:renderPlanejamento,lancamentos:renderLancamentos};
+function goTo(id,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  el.classList.add('active');
+  if(renders[id]) renders[id]();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.getElementById('p-data').valueAsDate=new Date();
+loadAll().then(()=>renderResumo());
+</script>
+</body>
+</html>
