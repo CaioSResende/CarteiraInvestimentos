@@ -8,6 +8,8 @@ from flask import Flask, jsonify, request, send_from_directory
 import sqlite3, os, json, threading, time
 from datetime import datetime
 
+from typing import Optional
+
 # yfinance é importado com tratamento de erro caso não esteja instalado ainda
 try:
     import yfinance as yf
@@ -108,7 +110,8 @@ def ticker_b3(ticker, tipo=''):
         return ticker
     return ticker + '.SA'
 
-def buscar_cotacao(ticker, tipo=''):
+
+def buscar_cotacao(ticker: str, tipo: str = '') -> Optional[float]:
     """Busca o preço atual de um ticker via yfinance. Retorna None se falhar."""
     if not YFINANCE_OK:
         return None
