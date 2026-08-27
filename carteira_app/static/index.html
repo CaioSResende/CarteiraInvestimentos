@@ -860,7 +860,8 @@ const BC = t => ({'Ações':'badge-acoes','FIIs':'badge-fiis','Stocks':'badge-st
 const patrimonio = () => ativos.reduce((s,a)=>s+totalBRL(a),0);
 const investido  = () => ativos.reduce((s,a)=>s+totalInvBRL(a),0);
 const ganho      = () => patrimonio()-investido();
-const totalProv  = () => proventos.reduce((s,p)=>s+p.valor,0);
+const hoje_str   = () => new Date().toISOString().slice(0,10);
+const totalProv  = () => proventos.filter(p=>p.data<=hoje_str()).reduce((s,p)=>s+p.valor,0);
 const porTipo    = () => ativos.reduce((t,a)=>{t[a.tipo]=(t[a.tipo]||0)+totalBRL(a);return t;},{});
 
 function renderStats(id, cards) {
@@ -957,8 +958,9 @@ async function buildAportes() {
 }
 
 function buildProvChart() {
+  const hoje = new Date().toISOString().slice(0,10);
   const months={};
-  proventos.forEach(p=>{const m=p.data.slice(0,7);months[m]=(months[m]||0)+p.valor;});
+  proventos.filter(p=>p.data<=hoje).forEach(p=>{const m=p.data.slice(0,7);months[m]=(months[m]||0)+p.valor;});
   const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0])).slice(-8);
   const MESES=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const labels=sorted.map(([m])=>{const [y,mo]=m.split('-');return MESES[+mo]+'/'+y.slice(2);});
@@ -1096,8 +1098,9 @@ function renderCarteira() {
 }
 
 function renderProventos() {
+  const hoje_data = new Date().toISOString().slice(0,10);
   const filtroMesPv = (document.getElementById('filtro-mes-proventos')||{}).value || '';
-  const proventosFiltrados = filtroMesPv ? proventos.filter(p=>p.data.slice(0,7)===filtroMesPv) : proventos;
+  const proventosFiltrados = (filtroMesPv ? proventos.filter(p=>p.data.slice(0,7)===filtroMesPv) : proventos).filter(p=>p.data<=hoje_data);
   const totalFilt = proventosFiltrados.reduce((s,p)=>s+p.valor,0);
   const inv=investido(), nmeses=new Set(proventos.map(p=>p.data.slice(0,7))).size||1;
   renderStats('stats-proventos',[
