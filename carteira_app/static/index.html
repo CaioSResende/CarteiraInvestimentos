@@ -593,6 +593,16 @@ tbody tr:hover td { background: var(--green-dim); }
     </div>
   </div>
 
+  <div id="card-prox-semana" class="card" style="margin-bottom:16px;border-left:3px solid var(--green);display:none;">
+    <div class="card-head"><span class="card-title">Recebo essa semana</span></div>
+    <div id="lista-prox-semana"></div>
+  </div>
+
+  <div id="card-concentracao" class="card" style="margin-bottom:16px;border-left:3px solid var(--blue);display:none;">
+    <div class="card-head"><span class="card-title">Concentração</span></div>
+    <div id="lista-concentracao"></div>
+  </div>
+
   <div class="grid2">
     <div class="card">
       <div class="card-head"><span class="card-title">Distribuição por tipo</span></div>
@@ -647,6 +657,10 @@ tbody tr:hover td { background: var(--green-dim); }
         <tbody></tbody>
       </table>
     </div>
+  </div>
+  <div class="card" id="card-vendas" style="margin-top:16px;display:none;">
+    <div class="card-head"><span class="card-title">Vendas realizadas</span></div>
+    <div id="lista-vendas"></div>
   </div>
 </div>
 
@@ -759,6 +773,17 @@ tbody tr:hover td { background: var(--green-dim); }
       <div class="card-head"><span class="card-title">Alocação atual vs meta</span></div>
       <div id="metas-alocacao"></div>
     </div>
+  </div>
+
+  <!-- CALCULADORA DE APORTE GUIADO -->
+  <div class="card">
+    <div class="card-head"><span class="card-title">Quanto aportar em cada classe</span></div>
+    <div class="form-grid" style="margin-bottom:4px;">
+      <div class="fg"><label>Valor do próximo aporte (R$)</label>
+        <input id="aporte-calc-valor" type="number" step="0.01" placeholder="2900" oninput="calcularAporteGuiado()">
+      </div>
+    </div>
+    <div id="aporte-calc-resultado" style="margin-top:8px;"></div>
   </div>
 
 </div>
@@ -929,6 +954,8 @@ tbody tr:hover td { background: var(--green-dim); }
       <div class="fg"><label>Preço médio (R$)</label><input id="edit-medio" type="number" step="0.01"></div>
       <div class="fg"><label>Preço atual (R$)</label><input id="edit-atual" type="number" step="0.01"></div>
       <div class="fg"><label>Dividend Yield (%)</label><input id="edit-dy" type="number" step="0.1"></div>
+      <div class="fg"><label>🔔 Alerta de compra (preço ≤)</label><input id="edit-alvo-compra" type="number" step="0.01" placeholder="opcional"></div>
+      <div class="fg"><label>🔔 Alerta de venda (preço ≥)</label><input id="edit-alvo-venda" type="number" step="0.01" placeholder="opcional"></div>
     </div>
     <!-- CAMPOS RF NO MODAL -->
     <div id="edit-rf-fields" style="display:none;margin:12px 0;padding:14px;background:var(--bg3);border-radius:var(--r);border-left:3px solid var(--yellow);">
@@ -953,6 +980,27 @@ tbody tr:hover td { background: var(--green-dim); }
   </div>
 </div>
 
+<!-- MODAL VENDA -->
+<div class="modal-overlay" id="modal-venda-overlay" onclick="fecharModalVenda(event)">
+  <div class="modal">
+    <div class="modal-title">Registrar venda</div>
+    <input type="hidden" id="venda-ativo-id">
+    <div class="form-grid">
+      <div class="fg"><label>Ativo</label><input id="venda-ticker" disabled style="opacity:0.5"></div>
+      <div class="fg"><label>Você tem</label><input id="venda-qtd-total" disabled style="opacity:0.5"></div>
+      <div class="fg"><label>Quantidade a vender</label><input id="venda-qtd" type="number" step="any"></div>
+      <div class="fg"><label>Preço de venda (unidade)</label><input id="venda-preco" type="number" step="0.01"></div>
+      <div class="fg"><label>Corretagem (opcional)</label><input id="venda-corretagem" type="number" step="0.01" placeholder="0,00"></div>
+      <div class="fg"><label>Data</label><input id="venda-data" type="date"></div>
+    </div>
+    <div id="venda-preview" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-venda-overlay').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-green" onclick="confirmarVenda()">Confirmar venda</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─── API ──────────────────────────────────────────────────────────────────────
 const api = {
@@ -963,11 +1011,27 @@ const api = {
 };
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let ativos = [], proventos = [], aportes = [];
+let ativos = [], proventos = [], aportes = [], vendas = [];
 let cotacaoUSD = null;
 
+async function carregarSeguro(url, label, atual) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${label} retornou HTTP ${r.status}`);
+    return await r.json();
+  } catch (e) {
+    console.error(`Falha ao carregar ${label}:`, e);
+    toast(`⚠ Não consegui carregar ${label} (servidor desatualizado ou offline?).`);
+    return atual; // mantém o que já tinha em vez de zerar
+  }
+}
 async function loadAll() {
-  [ativos, proventos, aportes] = await Promise.all([api.get('/api/ativos'), api.get('/api/proventos'), api.get('/api/aportes')]);
+  [ativos, proventos, aportes, vendas] = await Promise.all([
+    carregarSeguro('/api/ativos',    'ativos',    ativos),
+    carregarSeguro('/api/proventos', 'proventos', proventos),
+    carregarSeguro('/api/aportes',   'aportes',   aportes),
+    carregarSeguro('/api/vendas',    'vendas',    vendas),
+  ]);
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -1133,6 +1197,8 @@ function renderResumo() {
   ]);
   buildPie();
   buildAportes(); // async, dispara sem await
+  renderProxSemana();
+  renderConcentracao();
   const tbody=document.querySelector('#tbl-resumo tbody');
   if(!ativos.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="empty-icon">📂</div><p>Nenhum ativo. Vá em Lançamentos para adicionar.</p></div></td></tr>';return;}
   tbody.innerHTML=ativos.map(a=>{
@@ -1203,8 +1269,11 @@ function renderCarteira() {
   }
   tbody.innerHTML = ativosFiltrados.map(a=>{
     const g=(a.atual-a.medio)*a.qtd, v=(a.atual-a.medio)/a.medio*100;
+    let alerta='';
+    if(a.alvo_compra && a.atual<=a.alvo_compra) alerta=` <span class="up" title="Preço atingiu o alvo de compra (${fmtV(a.alvo_compra,a.moeda)})">🔔⬇</span>`;
+    else if(a.alvo_venda && a.atual>=a.alvo_venda) alerta=` <span class="up" title="Preço atingiu o alvo de venda (${fmtV(a.alvo_venda,a.moeda)})">🔔⬆</span>`;
     return `<tr>
-      <td style="font-weight:600;font-size:13px;">${a.ticker}</td>
+      <td style="font-weight:600;font-size:13px;">${a.ticker}${alerta}</td>
       <td><span class="badge ${BC(a.tipo)}">${a.tipo}</span></td>
       <td class="mono">${a.qtd}</td>
       <td class="mono">${fmtV(a.medio, a.moeda)}</td>
@@ -1219,10 +1288,70 @@ function renderCarteira() {
       <td>${cotacaoTag(a)}</td>
       <td style="display:flex;gap:6px;align-items:center;">
         <button class="btn-edit" onclick="abrirHistorico('${a.ticker}')" title="Histórico">📈</button>
+        <button class="btn-edit" onclick="abrirModalVenda(${a.id})" title="Registrar venda">💰</button>
         <button class="btn-del" onclick="removeAtivo(${a.id})">✕</button>
       </td>
     </tr>`;
   }).join('');
+}
+
+function renderConcentracao() {
+  const card = document.getElementById('card-concentracao');
+  const div  = document.getElementById('lista-concentracao');
+  const total = patrimonio();
+  if (!ativos.length || !total) { card.style.display = 'none'; return; }
+
+  // Maior posição individual da carteira toda
+  const maior = ativos.reduce((m,a) => totalBRL(a) > totalBRL(m) ? a : m, ativos[0]);
+  const pctMaior = totalBRL(maior) / total * 100;
+  const corMaior = pctMaior >= 25 ? 'down' : (pctMaior >= 15 ? '' : 'up');
+
+  // Ativo que domina dentro da própria classe (ex: um FII sendo 70% dos FIIs)
+  const tipos = porTipo();
+  const avisos = [];
+  TIPOS_ORDEM.forEach(t => {
+    const doTipo = ativos.filter(a => a.tipo === t);
+    const totalTipo = tipos[t] || 0;
+    if (doTipo.length < 2 || !totalTipo) return;
+    const maiorDoTipo = doTipo.reduce((m,a) => totalBRL(a) > totalBRL(m) ? a : m, doTipo[0]);
+    const pct = totalBRL(maiorDoTipo) / totalTipo * 100;
+    if (pct >= 50) avisos.push({ ticker: maiorDoTipo.ticker, tipo: t, pct });
+  });
+
+  let html = `<div class="meta-row">
+    <div class="meta-labels"><span>Maior posição: <strong>${maior.ticker}</strong></span>
+      <span class="${corMaior}" style="font-weight:600;">${pctMaior.toFixed(1)}% da carteira</span></div>
+  </div>`;
+  avisos.forEach(a => {
+    html += `<div style="font-size:12px;color:var(--muted);margin-top:8px;">⚠ <strong>${a.ticker}</strong> é ${a.pct.toFixed(0)}% da sua fatia de ${a.tipo}.</div>`;
+  });
+  div.innerHTML = html;
+  card.style.display = '';
+}
+
+function renderProxSemana() {
+  const card = document.getElementById('card-prox-semana');
+  const lista = document.getElementById('lista-prox-semana');
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const limite = new Date(hoje); limite.setDate(limite.getDate()+7);
+  const fmt = d => d.toISOString().slice(0,10);
+  const proximos = proventos
+    .filter(p => p.data >= fmt(hoje) && p.data <= fmt(limite))
+    .sort((a,b) => a.data.localeCompare(b.data));
+  if (!proximos.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const total = proximos.reduce((s,p)=>s+p.valor,0);
+  lista.innerHTML = `<div style="margin-bottom:10px;font-size:13px;">Total previsto: <span class="up" style="font-weight:700;">${R(total)}</span> em ${proximos.length} pagamento(s)</div>`
+    + proximos.map(p => {
+        const [y,m,dd] = p.data.split('-');
+        return `<div class="prov-row">
+          <div>
+            <div class="prov-ticker">${p.ativo} <span class="dim" style="font-size:11px;font-weight:400">${p.tipo}</span></div>
+            <div class="dim" style="font-size:11px;">${dd}/${m}</div>
+          </div>
+          <span class="up mono" style="font-weight:600;">${R(p.valor)}</span>
+        </div>`;
+      }).join('');
 }
 
 function renderProventos() {
@@ -1241,7 +1370,7 @@ function renderProventos() {
   renderListaProvDolar();
   const lista=document.getElementById('lista-proventos');
   if(!proventosFiltrados.length){lista.innerHTML='<div class="empty"><div class="empty-icon">💰</div><p>Nenhum provento neste período.</p></div>';return;}
-  // Sem filtro: mantém o histórico compacto para não alongar a página
+  // Sem filtro: mostra todo o mês mais recente (sem truncar em 6 itens)
   let provParaMostrar;
   if(filtroMesPv) {
     provParaMostrar = proventosFiltrados;
@@ -1249,8 +1378,7 @@ function renderProventos() {
     const mesMaisRecente = [...new Set(proventosFiltrados.map(p=>p.data.slice(0,7)))].sort().reverse()[0];
     provParaMostrar = proventosFiltrados
       .filter(p=>p.data.slice(0,7)===mesMaisRecente)
-      .sort((a,b)=>b.data.localeCompare(a.data) || b.id-a.id)
-      .slice(0,6);
+      .sort((a,b)=>b.data.localeCompare(a.data) || b.id-a.id);
   }
   // Agrupar por mês
   const MESES_PT=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -1384,6 +1512,55 @@ function renderPlanejamento() {
 
 }
 
+function calcularAporteGuiado() {
+  const out = document.getElementById('aporte-calc-resultado');
+  const valorInput = document.getElementById('aporte-calc-valor');
+  if (!out || !valorInput) return;
+  const aporte = parseFloat(valorInput.value);
+  if (!aporte || aporte <= 0) { out.innerHTML = ''; return; }
+
+  const m = loadMetas();
+  const tipos = porTipo();
+  const totalAtual = patrimonio();
+  const novoTotal  = totalAtual + aporte;
+
+  // Gap = quanto falta pra cada classe chegar no valor ideal (meta% do novo total)
+  const gaps = {};
+  TIPOS_ORDEM.forEach(t => {
+    const metaPct = (m.alocacao[t] || 0) / 100;
+    const ideal   = novoTotal * metaPct;
+    const atual   = tipos[t] || 0;
+    gaps[t] = Math.max(0, ideal - atual);
+  });
+  const somaGaps = Object.values(gaps).reduce((s,v) => s+v, 0);
+
+  // Se o aporte cobre todos os gaps, o resto sobra distribuído pela meta (mantém equilíbrio)
+  // Se não cobre, distribui proporcional aos gaps (prioriza quem está mais defasado)
+  const alocacao = {};
+  TIPOS_ORDEM.forEach(t => {
+    const metaPct = (m.alocacao[t] || 0) / 100;
+    if (somaGaps <= aporte) {
+      const resto = aporte - somaGaps;
+      alocacao[t] = gaps[t] + resto * metaPct;
+    } else {
+      alocacao[t] = somaGaps > 0 ? aporte * (gaps[t] / somaGaps) : 0;
+    }
+  });
+
+  const somaAlocada = Object.values(alocacao).reduce((s,v) => s+v, 0);
+  out.innerHTML = TIPOS_ORDEM
+    .filter(t => (m.alocacao[t] || 0) > 0 || (tipos[t] || 0) > 0)
+    .map(t => {
+      const val = alocacao[t] || 0;
+      const pctDoAporte = aporte ? (val / aporte * 100) : 0;
+      return `<div class="meta-row">
+        <div class="meta-labels"><span>${t}</span><span style="font-weight:600;">${R(val)}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pctDoAporte.toFixed(1)}%;background:${BAR_COLORS[t]}"></div></div>
+      </div>`;
+    }).join('')
+    + `<div style="margin-top:10px;font-size:12px;color:var(--muted);">Total alocado: ${R(somaAlocada)} de ${R(aporte)}</div>`;
+}
+
 function renderLancamentos() {
   const filtroMesLc = (document.getElementById('filtro-mes-lanc')||{}).value || '';
   const ativosFiltLc = filtroMesLc
@@ -1445,6 +1622,80 @@ async function removeAtivo(id) {
   ativos=ativos.filter(x=>x.id!==id);
   renderLancamentos(); renderCarteira(); renderResumo();
   toast('Ativo removido.');
+}
+
+// ─── VENDAS ───────────────────────────────────────────────────────────────────
+function abrirModalVenda(id) {
+  const a = ativos.find(x => x.id === id);
+  document.getElementById('venda-ativo-id').value = a.id;
+  document.getElementById('venda-ticker').value   = a.ticker;
+  document.getElementById('venda-qtd-total').value = a.qtd + (a.moeda === 'USD' ? ' (USD)' : '');
+  document.getElementById('venda-qtd').value    = a.qtd;
+  document.getElementById('venda-qtd').max      = a.qtd;
+  document.getElementById('venda-preco').value  = a.atual;
+  document.getElementById('venda-corretagem').value = '';
+  document.getElementById('venda-data').value   = new Date().toISOString().slice(0,10);
+  atualizarPreviewVenda();
+  document.getElementById('modal-venda-overlay').classList.add('open');
+}
+function fecharModalVenda(e) {
+  if (e.target === document.getElementById('modal-venda-overlay'))
+    document.getElementById('modal-venda-overlay').classList.remove('open');
+}
+function atualizarPreviewVenda() {
+  const a = ativos.find(x => x.id === parseInt(document.getElementById('venda-ativo-id').value));
+  const qtd   = parseFloat(document.getElementById('venda-qtd').value) || 0;
+  const preco = parseFloat(document.getElementById('venda-preco').value) || 0;
+  const corretagem = parseFloat(document.getElementById('venda-corretagem').value) || 0;
+  const prev  = document.getElementById('venda-preview');
+  if (!a || !qtd || !preco) { prev.innerHTML = ''; return; }
+  const ganho = qtd * (preco - a.medio) - corretagem;
+  const cor = ganho >= 0 ? 'up' : 'down';
+  const notaFiscal = a.tipo === 'FIIs'
+    ? 'FIIs não têm isenção: 20% de IR sobre o ganho, via DARF, se houver lucro.'
+    : a.tipo === 'Ações'
+      ? 'Ações têm isenção de IR se o total vendido no mês (todas as ações) ficar até R$ 20.000.'
+      : 'Confirme a regra de tributação aplicável a este tipo de ativo.';
+  prev.innerHTML = `<span class="${cor}" style="font-weight:600;">${ganho>=0?'Ganho':'Perda'} estimado: ${fmtV(Math.abs(ganho), a.moeda)}</span>
+    <div style="margin-top:4px;">${qtd >= a.qtd ? 'Isso encerra totalmente essa posição.' : `Restam ${(a.qtd-qtd).toFixed(4)} unidades depois da venda.`}</div>
+    <div style="margin-top:4px;font-size:12px;">${notaFiscal}</div>`;
+}
+document.addEventListener('input', e => {
+  if (e.target && (e.target.id === 'venda-qtd' || e.target.id === 'venda-preco' || e.target.id === 'venda-corretagem')) atualizarPreviewVenda();
+});
+async function confirmarVenda() {
+  const ativo_id = parseInt(document.getElementById('venda-ativo-id').value);
+  const qtd       = parseFloat(document.getElementById('venda-qtd').value);
+  const preco_venda = parseFloat(document.getElementById('venda-preco').value);
+  const corretagem = parseFloat(document.getElementById('venda-corretagem').value) || 0;
+  const data      = document.getElementById('venda-data').value;
+  if (!qtd || !preco_venda || !data) return toast('⚠ Preencha todos os campos.');
+  const resultado = await api.post('/api/vendas', { ativo_id, qtd, preco_venda, corretagem, data });
+  if (resultado.erro) return toast('⚠ ' + resultado.erro);
+  vendas.unshift(resultado);
+  if (resultado.posicao_zerada) {
+    ativos = ativos.filter(x => x.id !== ativo_id);
+  } else {
+    const a = ativos.find(x => x.id === ativo_id);
+    if (a) a.qtd = resultado.qtd_restante;
+  }
+  document.getElementById('modal-venda-overlay').classList.remove('open');
+  renderAll();
+  const cor = resultado.ganho >= 0 ? '✓' : '⚠';
+  toast(`${cor} Venda registrada: ${resultado.ganho>=0?'ganho':'perda'} de ${fmtV(Math.abs(resultado.ganho), resultado.moeda)}`);
+}
+function renderVendas() {
+  const card = document.getElementById('card-vendas');
+  const lista = document.getElementById('lista-vendas');
+  if (!vendas.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  lista.innerHTML = vendas.map(v => `<div class="prov-row">
+    <div>
+      <div class="prov-ticker">${v.ticker} <span class="dim" style="font-size:11px;font-weight:400">${v.qtd} un. · ${fmtV(v.preco_venda, v.moeda)}${v.corretagem?' · corretagem '+fmtV(v.corretagem, v.moeda):''}</span></div>
+      <div class="dim" style="font-size:11px;">${v.data}</div>
+    </div>
+    <span class="${v.ganho>=0?'up':'down'} mono" style="font-weight:600;">${fmtV(Math.abs(v.ganho), v.moeda)}</span>
+  </div>`).join('');
 }
 
 async function addProvento() {
@@ -1529,6 +1780,8 @@ function abrirModal(id) {
   document.getElementById('edit-medio').value  = a.medio;
   document.getElementById('edit-atual').value  = a.atual;
   document.getElementById('edit-dy').value     = a.dy;
+  document.getElementById('edit-alvo-compra').value = a.alvo_compra ?? '';
+  document.getElementById('edit-alvo-venda').value  = a.alvo_venda ?? '';
   document.getElementById('modal-overlay').classList.add('open');
   // Mostrar campos RF se for Renda Fixa
   toggleEditRFFields(a.tipo);
@@ -1552,7 +1805,9 @@ async function salvarEdicao() {
   const rf_subtipo  = document.getElementById('edit-rf-subtipo').value||'';
   const rf_taxa     = document.getElementById('edit-rf-taxa').value||'';
   const rf_vencimento = document.getElementById('edit-rf-vencimento').value||'';
-  const att=await api.put('/api/ativos/'+id,{ticker,tipo,qtd,medio,atual,dy,rf_subtipo,rf_taxa,rf_vencimento});
+  const alvo_compra = document.getElementById('edit-alvo-compra').value || null;
+  const alvo_venda  = document.getElementById('edit-alvo-venda').value  || null;
+  const att=await api.put('/api/ativos/'+id,{ticker,tipo,qtd,medio,atual,dy,rf_subtipo,rf_taxa,rf_vencimento,alvo_compra,alvo_venda});
   ativos[ativos.findIndex(x=>x.id===id)]=att;
   document.getElementById('modal-overlay').classList.remove('open');
   renderAll(); toast('✓ Ativo atualizado!');
@@ -2024,7 +2279,7 @@ function removerObjetivo(id) {
   toast('Objetivo removido.');
 }
 
-function renderAll(){renderResumo();renderCarteira();renderProventos();renderPlanejamento();renderAportes();renderLancamentos();}
+function renderAll(){renderResumo();renderCarteira();renderVendas();renderProventos();renderPlanejamento();renderAportes();renderLancamentos();}
 const renders={resumo:renderResumo,carteira:renderCarteira,proventos:renderProventos,planejamento:renderPlanejamento,aportes:renderAportes,lancamentos:renderLancamentos};
 function goTo(id,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
