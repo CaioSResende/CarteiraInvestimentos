@@ -74,15 +74,37 @@ def init_db():
             origem  TEXT DEFAULT 'manual',
             criado  TEXT DEFAULT (datetime('now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS vendas (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker        TEXT NOT NULL,
+            tipo          TEXT NOT NULL,
+            qtd           REAL NOT NULL,
+            preco_venda   REAL NOT NULL,
+            custo_medio   REAL NOT NULL,
+            valor_total   REAL NOT NULL,
+            ganho         REAL NOT NULL,
+            corretagem    REAL DEFAULT 0,
+            moeda         TEXT DEFAULT 'BRL',
+            data          TEXT NOT NULL,
+            criado        TEXT DEFAULT (datetime('now','localtime'))
+        );
     """)
     conn.commit()
 
     # Migração: adicionar colunas de renda fixa se não existirem
     cols = [r[1] for r in conn.execute("PRAGMA table_info(ativos)").fetchall()]
-    for col, defval in [('rf_subtipo','TEXT'), ('rf_taxa','TEXT'), ('rf_vencimento','TEXT'), ('moeda',"TEXT DEFAULT 'BRL'")]:
+    for col, defval in [('rf_subtipo','TEXT'), ('rf_taxa','TEXT'), ('rf_vencimento','TEXT'), ('moeda',"TEXT DEFAULT 'BRL'"),
+                        ('alvo_compra','REAL'), ('alvo_venda','REAL')]:
         if col not in cols:
             conn.execute(f"ALTER TABLE ativos ADD COLUMN {col} {defval}")
             print(f"  ✓ Coluna '{col}' adicionada à tabela ativos.")
+    conn.commit()
+
+    # Migração: corretagem em vendas (tabela pode já existir sem essa coluna)
+    cols_v = [r[1] for r in conn.execute("PRAGMA table_info(vendas)").fetchall()]
+    if 'corretagem' not in cols_v:
+        conn.execute("ALTER TABLE vendas ADD COLUMN corretagem REAL DEFAULT 0")
+        print("  ✓ Coluna 'corretagem' adicionada à tabela vendas.")
     conn.commit()
 
     conn.close()
@@ -226,7 +248,9 @@ def criar_ativo():
     tipo_ativo    = d.get('tipo','')
     rf_subtipo    = d.get('rf_subtipo', '') or ''
     rf_taxa       = d.get('rf_taxa', '') or ''
-    rf_vencimento = d.get('rf_vencimento', '') or '' 
+    rf_vencimento = d.get('rf_vencimento', '') or ''
+    alvo_compra   = float(d['alvo_compra']) if d.get('alvo_compra') not in (None, '') else None
+    alvo_venda    = float(d['alvo_venda'])  if d.get('alvo_venda')  not in (None, '') else None
 
     # Tenta buscar cotação e DY automaticamente ao cadastrar
     cotacao = buscar_cotacao(ticker, tipo_ativo)
@@ -267,12 +291,13 @@ def criar_ativo():
         print(f"  ✓ {ticker} atualizado: {qtd_atual} + {qtd_nova} = {nova_qtd} cotas, P.M. R$ {round(novo_medio,2)}")
     else:
         conn.execute(
-            'INSERT INTO ativos (ticker, tipo, qtd, medio, atual, dy, auto_cotacao, ultima_atualizacao, rf_subtipo, rf_taxa, rf_vencimento, moeda) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO ativos (ticker, tipo, qtd, medio, atual, dy, auto_cotacao, ultima_atualizacao, rf_subtipo, rf_taxa, rf_vencimento, moeda, alvo_compra, alvo_venda) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (ticker, d['tipo'], qtd_nova, medio_novo, preco_atual,
              dy_novo, d.get('auto_cotacao', 1),
              datetime.now().strftime('%d/%m/%Y %H:%M') if cotacao else None,
              rf_subtipo, rf_taxa, rf_vencimento,
-             'USD' if d.get('tipo','') in ('Stocks','REITs') else 'BRL')
+             'USD' if d.get('tipo','') in ('Stocks','REITs') else 'BRL',
+             alvo_compra, alvo_venda)
         )
         conn.commit()
         id_ = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -284,13 +309,16 @@ def criar_ativo():
 @app.route('/api/ativos/<int:id>', methods=['PUT'])
 def atualizar_ativo(id):
     d = request.json
+    alvo_compra = float(d['alvo_compra']) if d.get('alvo_compra') not in (None, '') else None
+    alvo_venda  = float(d['alvo_venda'])  if d.get('alvo_venda')  not in (None, '') else None
     conn = get_db()
     conn.execute(
-        'UPDATE ativos SET ticker=?, tipo=?, qtd=?, medio=?, atual=?, dy=?, auto_cotacao=?, rf_subtipo=?, rf_taxa=?, rf_vencimento=?, moeda=? WHERE id=?',
+        'UPDATE ativos SET ticker=?, tipo=?, qtd=?, medio=?, atual=?, dy=?, auto_cotacao=?, rf_subtipo=?, rf_taxa=?, rf_vencimento=?, moeda=?, alvo_compra=?, alvo_venda=? WHERE id=?',
         (d['ticker'].upper(), d['tipo'], d['qtd'], d['medio'],
          d['atual'], d.get('dy', 0), d.get('auto_cotacao', 1),
          d.get('rf_subtipo',''), d.get('rf_taxa',''), d.get('rf_vencimento',''),
-         'USD' if d.get('tipo','') in ('Stocks','REITs') else d.get('moeda','BRL'), id)
+         'USD' if d.get('tipo','') in ('Stocks','REITs') else d.get('moeda','BRL'),
+         alvo_compra, alvo_venda, id)
     )
     conn.commit()
     row = conn.execute('SELECT * FROM ativos WHERE id=?', (id,)).fetchone()
@@ -301,6 +329,72 @@ def atualizar_ativo(id):
 def deletar_ativo(id):
     conn = get_db()
     conn.execute('DELETE FROM ativos WHERE id=?', (id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+# ── ROTAS: VENDAS ──────────────────────────────────────────────────────────────
+@app.route('/api/vendas', methods=['GET'])
+def listar_vendas():
+    conn = get_db()
+    rows = conn.execute('SELECT * FROM vendas ORDER BY data DESC, id DESC').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/vendas', methods=['POST'])
+def criar_venda():
+    """Registra a venda (total ou parcial) de um ativo já existente na carteira.
+    Dá baixa na quantidade do ativo (ou remove, se a venda zerar a posição) e
+    grava o ganho/perda realizado com base no preço médio no momento da venda."""
+    d = request.json
+    ativo_id    = int(d['ativo_id'])
+    qtd_venda   = float(d['qtd'])
+    preco_venda = float(d['preco_venda'])
+    corretagem  = float(d.get('corretagem', 0) or 0)
+    data_venda  = d.get('data') or datetime.now().strftime('%Y-%m-%d')
+
+    conn = get_db()
+    ativo = conn.execute('SELECT * FROM ativos WHERE id=?', (ativo_id,)).fetchone()
+    if not ativo:
+        conn.close()
+        return jsonify({'erro': 'Ativo não encontrado.'}), 404
+    if qtd_venda <= 0:
+        conn.close()
+        return jsonify({'erro': 'Quantidade deve ser maior que zero.'}), 400
+    if qtd_venda > ativo['qtd'] + 1e-6:
+        conn.close()
+        return jsonify({'erro': f"Você só tem {ativo['qtd']} unidades de {ativo['ticker']}."}), 400
+
+    custo_medio = ativo['medio']
+    valor_total = qtd_venda * preco_venda
+    ganho       = qtd_venda * (preco_venda - custo_medio) - corretagem
+    nova_qtd    = ativo['qtd'] - qtd_venda
+
+    conn.execute(
+        'INSERT INTO vendas (ticker,tipo,qtd,preco_venda,custo_medio,valor_total,ganho,corretagem,moeda,data) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        (ativo['ticker'], ativo['tipo'], qtd_venda, preco_venda, custo_medio, valor_total, ganho, corretagem, ativo['moeda'] or 'BRL', data_venda)
+    )
+    posicao_zerada = nova_qtd <= 1e-6
+    if posicao_zerada:
+        conn.execute('DELETE FROM ativos WHERE id=?', (ativo_id,))
+    else:
+        conn.execute('UPDATE ativos SET qtd=? WHERE id=?', (nova_qtd, ativo_id))
+    conn.commit()
+
+    id_ = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+    venda = dict(conn.execute('SELECT * FROM vendas WHERE id=?', (id_,)).fetchone())
+    conn.close()
+    venda['posicao_zerada'] = posicao_zerada
+    venda['qtd_restante']   = 0 if posicao_zerada else round(nova_qtd, 6)
+    return jsonify(venda), 201
+
+@app.route('/api/vendas/<int:id>', methods=['DELETE'])
+def deletar_venda(id):
+    """Remove apenas o registro histórico da venda (para corrigir um lançamento
+    errado). NÃO devolve a quantidade ao ativo automaticamente — se o ativo já
+    não existir mais na carteira, ajuste a quantidade manualmente depois."""
+    conn = get_db()
+    conn.execute('DELETE FROM vendas WHERE id=?', (id,))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -362,15 +456,34 @@ def deletar_provento(id):
     return jsonify({'ok': True})
 
 # ── ROTAS: SNAPSHOTS ──────────────────────────────────────────────────────────
+def buscar_fx_dolar():
+    """Busca a cotação atual do dólar. Retorna 1.0 (sem conversão) se falhar."""
+    if not YFINANCE_OK:
+        return 1.0
+    try:
+        t = yf.Ticker('USDBRL=X')
+        info = t.fast_info
+        preco = getattr(info, 'last_price', None) or getattr(info, 'regular_market_price', None)
+        if preco and preco > 0:
+            return float(preco)
+    except Exception as e:
+        print(f"  ⚠ Erro ao buscar câmbio para snapshot: {e}")
+    return 1.0
+
 def salvar_snapshot():
-    """Salva ou atualiza o snapshot do mês atual com patrimônio e investido."""
+    """Salva ou atualiza o snapshot do mês atual com patrimônio e investido.
+    Ativos em moeda!='BRL' são convertidos pela cotação do dólar antes de somar,
+    já que qtd/medio/atual desses ativos são armazenados na moeda original (ex: USD)."""
     conn = get_db()
-    ativos = conn.execute('SELECT qtd, medio, atual FROM ativos').fetchall()
+    ativos = conn.execute('SELECT qtd, medio, atual, moeda FROM ativos').fetchall()
     if not ativos:
         conn.close()
         return
-    patrimonio = sum(a['qtd'] * a['atual']  for a in ativos)
-    investido  = sum(a['qtd'] * a['medio'] for a in ativos)
+    fx = buscar_fx_dolar()
+    def fator(a):
+        return fx if (a['moeda'] or 'BRL') != 'BRL' else 1.0
+    patrimonio = sum(a['qtd'] * a['atual'] * fator(a) for a in ativos)
+    investido  = sum(a['qtd'] * a['medio'] * fator(a) for a in ativos)
     mes = datetime.now().strftime('%Y-%m')
     conn.execute(
         'INSERT INTO snapshots (mes, patrimonio, investido) VALUES (?,?,?) '
@@ -580,8 +693,9 @@ def backup():
     ativos    = [dict(r) for r in conn.execute('SELECT * FROM ativos').fetchall()]
     proventos = [dict(r) for r in conn.execute('SELECT * FROM proventos').fetchall()]
     aportes   = [dict(r) for r in conn.execute('SELECT * FROM aportes').fetchall()]
+    vendas    = [dict(r) for r in conn.execute('SELECT * FROM vendas').fetchall()]
     conn.close()
-    return jsonify({'ativos': ativos, 'proventos': proventos, 'aportes': aportes, 'exportado': datetime.now().isoformat()})
+    return jsonify({'ativos': ativos, 'proventos': proventos, 'aportes': aportes, 'vendas': vendas, 'exportado': datetime.now().isoformat()})
 
 @app.route('/api/restaurar', methods=['POST'])
 def restaurar():
@@ -604,6 +718,14 @@ def restaurar():
         for a in d['aportes']:
             conn.execute('INSERT INTO aportes (data,valor,descricao,origem) VALUES (?,?,?,?)',
                 (a['data'], a['valor'], a.get('descricao',''), a.get('origem','manual')))
+    if 'vendas' in d:
+        conn.execute('DELETE FROM vendas')
+        for v in d['vendas']:
+            conn.execute(
+                'INSERT INTO vendas (ticker,tipo,qtd,preco_venda,custo_medio,valor_total,ganho,corretagem,moeda,data) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (v['ticker'], v['tipo'], v['qtd'], v['preco_venda'], v['custo_medio'],
+                 v['valor_total'], v['ganho'], v.get('corretagem',0), v.get('moeda','BRL'), v['data'])
+            )
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
